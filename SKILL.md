@@ -1,40 +1,57 @@
 ---
 name: slack-post-from-context
-description: Use when the user asks to draft, share, or post something to Slack about the current conversation — phrasings like "post this to slack", "make a slack message about this", "share this on slack", "slack-format this", "draft a slack update". Composes the message in Slack mrkdwn (single-asterisk bold, no headings, `<url|text>` links, `:emoji:`) and pipes it to `pbcopy` so the user pastes it directly. macOS only.
+description: Use when the user asks to draft, share, or post something to Slack about the current conversation — phrasings like "post this to slack", "make a slack message about this", "share this on slack", "slack-format this", "draft a slack update". Composes the message in the *paste-into-composer* dialect of Slack formatting (single-asterisk bold, bare URLs, no headings, `:emoji:`) and pipes it to `pbcopy` so the user pastes it directly. macOS only.
 ---
 
 # Slack post from current context
 
 When the user wants to share what just happened in this conversation as a
-Slack message, draft it in Slack's mrkdwn syntax and put it on the
-clipboard with `pbcopy`. The clipboard is the deliverable — the user
-pastes the message into Slack themselves.
+Slack message, draft it in the format the Slack composer accepts on paste
+and put it on the clipboard with `pbcopy`. The clipboard is the
+deliverable — the user pastes the message into Slack themselves.
 
-## Slack mrkdwn ≠ regular markdown
+## Two dialects: paste vs. API — this skill is *paste*
 
-This is the part every agent gets wrong. Slack renders standard markdown
-*literally*. Use mrkdwn:
+Slack has two formatting dialects, and the rules differ:
 
-| Want | Regular markdown | Slack mrkdwn |
-|------|------------------|--------------|
+- **API mrkdwn** (used by the Slack API, MCP tools, webhooks): supports
+  `<url|text>` links, `<@U123>` mentions, `<#C123|name>` channels.
+- **Composer paste** (what `pbcopy` + ⌘V hits): the WYSIWYG composer
+  *partially* parses mrkdwn — `*bold*`, `_italic_`, `~strike~`, backticks,
+  `:emoji:`, `>` quotes, and bullets all work. But it does **not** parse
+  `<url|text>`; it treats the whole thing as one URL and percent-encodes
+  the `|` to `%7C`, breaking the link.
+
+This skill targets the *paste* dialect. If the user wants the message
+actually sent (not drafted), use the Slack MCP and the API dialect there.
+
+## Formatting cheat-sheet (paste dialect)
+
+| Want | Regular markdown | Paste-into-Slack |
+|------|------------------|------------------|
 | Bold | `**bold**` | `*bold*` |
 | Italic | `*italic*` | `_italic_` |
 | Strikethrough | `~~text~~` | `~text~` |
 | Inline code | `` `code` `` | `` `code` `` |
 | Code block | ``` ```lang ``` | ``` ``` ``` (no language tag) |
-| Link | `[text](url)` | `<url\|text>` |
+| Link | `[text](url)` | bare URL on its own (Slack auto-linkifies; display = URL) |
 | Heading | `# Heading` | none — bold the line: `*Heading*` |
 | Bullet | `- item` | `• item` (renders nicer than `-`) |
 | Numbered | `1. item` | `1. item` |
 | Quote | `> text` | `> text` |
-| User mention | n/a | `<@U12345>` (need user ID) — fall back to `@name` |
-| Channel | n/a | `<#C12345\|name>` |
+| User mention | n/a | `@name` (autocomplete on send turns it into a real ping) |
+| Channel | n/a | `#channel` (same — autocomplete) |
 | Emoji | n/a | `:rocket:` `:white_check_mark:` `:warning:` |
 
-The two that bite hardest:
+The three that bite hardest:
 
 - `**bold**` renders as the literal characters `**bold**`. Use `*bold*`.
-- `[text](url)` renders as the literal characters. Use `<url|text>`.
+- `<url|text>` is *API* format — when pasted into the composer, the `|`
+  becomes `%7C` and the link breaks. Paste a **bare URL**; Slack
+  auto-linkifies it. Custom display text via `[text](url)` only works for
+  recipients who have "Format messages with markup" enabled — don't rely
+  on it.
+- `# Heading` renders as a literal `#`. Bold the line instead.
 
 ## Composing the message
 
@@ -60,11 +77,14 @@ pbcopy <<'EOF'
 *Shipped: KGM-3330 banner mismatch fix*
 
 • Root cause: home carousel banner cached past TTL on app cold start
-• Fix: <https://github.com/org/repo/pull/4711|PR #4711>
+• PR: https://github.com/org/repo/pull/4711
 • Verified on iOS 18.7.2 (iPhone 12 Pro Max) and Android 14 (Pixel 5a)
 • cc @felix — please review before mobile release cut on 2026-05-01
 EOF
 ```
+
+Note the bare URL on its own — `<url|PR #4711>` would paste as a broken
+URL with `%7C` in it.
 
 After running, reply to the user with **one short line**:
 
@@ -89,8 +109,9 @@ read it when they paste; echoing it just makes them read it twice.
 |---------|-----|
 | `**bold**` | Slack shows literal `**`. Use `*bold*`. |
 | `# Heading` | Renders as `#`. Bold the line instead: `*Heading*`. |
-| `[text](url)` | Renders as literal text. Use `<url\|text>`. |
+| `<url\|text>` in pasted text | API mrkdwn, not composer-paste — the `\|` becomes `%7C` and the link breaks. Paste a bare URL; Slack auto-linkifies. |
+| `[text](url)` to get custom display text | Only works for recipients with "Format messages with markup" enabled — unreliable. Use a bare URL. |
 | Triple-backtick with language tag | Slack ignores the tag and shows it as code. Drop the language. |
 | Echo the message body in the chat after pbcopy | The clipboard is the deliverable; don't make the user re-read it. |
 | Use `echo "…" \| pbcopy` for multi-line | Quoting breaks on `*`, backticks, `<>`. Use a `'EOF'`-quoted heredoc. |
-| Pipe markdown straight from a tool | Convert it to mrkdwn first. Don't copy-paste GitHub-style markdown. |
+| Pipe markdown straight from a tool | Convert it to paste-format first. Don't copy-paste GitHub-style markdown. |
